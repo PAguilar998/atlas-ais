@@ -179,13 +179,23 @@ function buildFeed(state, now) {
     });
   });
   vessels.sort((a, b) => b.lastSeen - a.lastSeen);
+  /* Buques con posición pero sin mensaje de tipo todavía: solo su última posición de los últimos 7 días.
+     Formato compacto [mmsi, lat, lon, lastSeen, sog, región, nombre]. No se presentan como buques tanque. */
+  const pending = [];
+  Object.keys(state.vessels).forEach((m) => {
+    if (typeOf(state, m) !== null) return;
+    const v = state.vessels[m];
+    if (v.lastSeen < now - LIMITS.unknownKeepMs || !v.region) return;
+    pending.push([Number(m), v.lat, v.lon, Math.round(v.lastSeen / 1000), v.sog === undefined ? null : v.sog, v.region, v.name || null]);
+  });
+  pending.sort((a, b) => b[3] - a[3]);
   const last = state.runs[state.runs.length - 1] || null;
   return {
     schema: SCHEMA, kind: 'atlas-ais-feed', source: 'aisstream.io',
     generatedAt: new Date(now).toISOString(), collectorStartedAt: new Date(state.startedAt).toISOString(),
-    regions: REGIONS, vessels, runs: state.runs.map((x) => ({ t: x.t, d: x.d, c: x.c, e: x.e })),
+    regions: REGIONS, vessels, pending, runs: state.runs.map((x) => ({ t: x.t, d: x.d, c: x.c, e: x.e })),
     lastRun: last ? { start: new Date(last.t * 1000).toISOString(), seconds: last.d, messages: last.m, positions: last.p, statics: last.s, error: last.e || null } : null,
-    notes: 'Buques tanque según tipo AIS 80-89 (crudo, productos, químicos y gas). Cobertura terrestre: la ausencia de reportes no implica ausencia de buques.',
+    notes: 'Buques tanque según tipo AIS 80-89 (crudo, productos, químicos y gas). "pending": buques sin mensaje de tipo recibido todavía. Cobertura terrestre: la ausencia de reportes no implica ausencia de buques.',
   };
 }
 
