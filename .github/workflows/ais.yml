@@ -1,0 +1,63 @@
+# ATLAS · recolector AIS
+# Cada 30 minutos escucha aisstream.io durante 4 minutos y publica el feed en GitHub Pages.
+# Requisitos: secreto AISSTREAM_API_KEY y Pages configurado con "Source: GitHub Actions".
+name: ATLAS AIS collector
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: atlas-ais-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Recuperar el estado acumulado
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: ais-state-${{ github.run_id }}
+          restore-keys: ais-state-
+
+      - name: Escuchar aisstream.io
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+          DURATION_SEC: '240'
+        run: node collector/collect.js --state state/ais-state.json --out site
+
+      - name: Guardar el estado
+        if: success() || failure()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: ais-state-${{ github.run_id }}
+
+      - name: Preparar Pages
+        if: success() || failure()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar
+        id: deploy
+        if: success() || failure()
+        uses: actions/deploy-pages@v4
